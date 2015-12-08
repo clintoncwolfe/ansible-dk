@@ -1,38 +1,80 @@
-#!/bin/bash
+#!/opt/ansible-dk/embedded/bin/python
+#
+# TODO: this code is very *nix centric.  Ensure that this works with Windows systems
 
-# ansible-dk tool.
-# The plan is for one day this to become a generic tool
-# with many subcommands, likely implemented in Ruby or Python.
-# The immediate need, though, is for a script that will provide
-# the shell env vars.
+import click
+import os
+import sys
 
-# Usage:
-# eval "$(ansible-dk shell-init bash)"
 
-# Check CLI args.  Not uh, very flexible at the moment.
-if [[ "z$1" != "zshell-init" ]]; then
-    echo "Usage: ansible-dk shell-init bash" 1>&2
-    exit 1
-fi
+###################################################
+# Defaults
+RUBY_ABI = "2.1.0"
+PYTHON_ABI = "2.7"
+HOME = os.getenv("HOME")
 
-if [[ "z$2" != "zbash" ]]; then
-    echo "Usage: ansible-dk shell-init bash" 1>&2
-    exit 2   
-fi
 
-RUBY_ABI=2.1.0
-PYTHON_ABI=2.7
+###################################################
+# Generic top-level group definitions
+@click.group()
+def cli():
+    pass
 
-# Ensure the user has a .ansible-dk directory for
-# private user gems
-mkdir -p $HOME/.ansible-dk
-mkdir -p $HOME/.ansible-dk/gem
-mkdir -p $HOME/.ansible-dk/python
 
-echo export PATH=\"/opt/ansible-dk/bin:$HOME/.ansible-dk/gem/ruby/$RUBY_ABI/bin:/opt/ansible-dk/embedded/bin:$PATH\"
-echo export GEM_ROOT=\"/opt/ansible-dk/embedded/lib/ruby/gems/$RUBY_ABI\"
-echo export GEM_HOME=\"$HOME/.ansible-dk/gem/ruby/$RUBY_ABI\"
-echo export GEM_PATH=\"$HOME/.ansible-dk/gem/ruby/$RUBY_ABI:/opt/ansible-dk/embedded/lib/ruby/gems/$RUBY_ABI\"
-echo export PYTHONUSERBASE=\"$HOME/.ansible-dk/python\"
-echo export PIP_INSTALL_OPTION=\"--user\"
-# echo export PYTHONPATH=
+@cli.group()
+def generate():
+    pass
+
+
+@cli.command()
+@click.option('--debug', is_flag=True, help="Enable debug mode")
+def shell_init(debug=False):
+    if debug:
+        print("[DEBUG] Home directory = %s" % HOME)
+
+    directories = [
+        HOME+"/.ansible-dk",
+        HOME+"/.ansible-dk/gem",
+        HOME+"/.ansible-dk/python"
+    ]
+
+    for directory in directories:
+        try:
+            if debug:
+                print("[DEBUG] Creating directory: %s" % directory)
+            os.mkdir(directory)
+        except FileNotFoundError as e:
+            print("Error: Unable to create directory: %s" % e.filename)
+            sys.exit(-1)
+        except FileExistsError as e:
+            if debug:
+                print("[DEBUG] directory already exists - skipping - %s" % e.filename)
+            pass
+
+    # Print out environment variables for the shell
+    print("export PATH=\"/opt/ansible-dk/bin:"+HOME+"/.ansible-dk/gem/ruby/"+RUBY_ABI+ \
+          "/bin:/opt/ansible-dk/embedded/bin:$PATH")
+    print("export GEM_ROOT=\"/opt/ansible-dk/embedded/lib/ruby/gems/"+RUBY_ABI+"\"")
+    print("export GEM_HOME=\""+HOME+"/.ansible-dk/gem/ruby/"+RUBY_ABI+"\"")
+    print("export GEM_PATH=\""+HOME+"/.ansible-dk/gem/ruby/"+RUBY_ABI+ \
+          ":/opt/ansible-dk/embedded/lib/ruby/gems/"+RUBY_ABI+"\"")
+    print("export PYTHONUSERBASE=\""+HOME+"/.ansible-dk/python\"")
+    print("export PIP_INSTALL_OPTION=\"--user\"")
+
+# -- generate command
+@generate.command(name='playbook')
+@click.option('--name', required=True, help='Name of playbook to generate')
+def generate_playbook(name):
+    print("Generating playbook: ", name)
+
+
+@generate.command(name='role')
+@click.option('--name', required=True, help='Name of role to generate')
+def generate_role(name):
+    print("Generating role: ", name)
+
+
+###################################################
+# Call main CLI
+if __name__ == '__main__':
+    cli()
