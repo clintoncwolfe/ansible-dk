@@ -13,6 +13,7 @@ RUBY_ABI = "2.1.0"
 PYTHON_ABI = "2.7"
 HOME = os.getenv("HOME")
 
+# pull version from version-manifest file left by package install
 def check_version():
     file='/opt/ansible-dk/version-manifest.json'
     try:
@@ -32,18 +33,14 @@ def check_version():
     return version
 
 ###################################################
-# Generic top-level group definitions
+# Generic top-level group definition
 @click.group()
 @click.version_option(version=check_version())
 def cli():
     pass
 
-
-@cli.group()
-def generate():
-    pass
-
-
+###################################################
+# shell-init command
 @cli.command(name='shell-init')
 @click.option('--debug', is_flag=True, help="Enable debug mode")
 @click.argument('shell', default='bash')
@@ -66,7 +63,7 @@ def shell_init(shell, debug=False):
         except OSError as e:
             if e.errno == 17: # if file exists
                 if debug:
-                		print("[DEBUG] %s - skipping - %s" % (e.strerror, e.filename))
+                    print("[DEBUG] %s - skipping - %s" % (e.strerror, e.filename))
                 pass
             else:
                 print("Error creating %s - %s(%d)" % (e.filename, e.strerror, e.errno))
@@ -82,18 +79,40 @@ def shell_init(shell, debug=False):
     print("export PYTHONUSERBASE=\""+HOME+"/.ansible-dk/python\"")
     print("export PIP_INSTALL_OPTION=\"--user\"")
 
-# -- generate command
+###################################################
+# verify command
+@cli.command()
+def verify():
+    commands = [
+        'ansible-dk --version',
+        'aws --version 2>&1 | tr " " "\n" | tr "/" " "',
+        'ansible --version',
+        'ansible-lint --version',
+        'ruby --version',
+        'kitchen --version',
+        'gem list ^kitchen-* | tail -n+0',
+    ]
+    for command in commands:
+        if os.system(command) != 0:
+            print "Verification of %s failed." % command.split()[0]
+            sys.exit(-1)
+    print "Verification succeeded."
+
+###################################################
+# generate command
+@cli.group()
+def generate():
+    pass
+
 @generate.command(name='playbook')
 @click.option('--name', required=True, help='Name of playbook to generate')
 def generate_playbook(name):
     print("Generating playbook: ", name)
 
-
 @generate.command(name='role')
 @click.option('--name', required=True, help='Name of role to generate')
 def generate_role(name):
     print("Generating role: ", name)
-
 
 ###################################################
 # Call main CLI
