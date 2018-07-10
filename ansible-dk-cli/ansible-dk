@@ -6,12 +6,39 @@ import click
 import os
 import sys
 import json
+import yaml
+from tempfile import NamedTemporaryFile
+from ansible.executor import playbook_executor
+from ansible.inventory import Inventory
+from ansible.parsing.dataloader import DataLoader
+from ansible.vars import VariableManager
+from collections import namedtuple
 
 ###################################################
 # Defaults
 RUBY_ABI = "2.1.0"
 PYTHON_ABI = "2.7"
 HOME = os.getenv("HOME")
+
+def get_config(debug=False):
+    config_path=os.path.expanduser('~/.ansible-dk/config.yml')
+    config = {
+        'generator': '/opt/ansible-dk/generators/default'
+    }
+    if os.path.isfile(config_path):
+        try:
+            config.update(yaml.load(open(config_path, 'r')))
+            if debug:
+                click.echo("Loaded config from %s:\n%s" % (config_path, config))
+            return config
+        except:
+            if debug:
+                click.echo("Error loading config file %s" % config_path)
+            return config
+    else:
+        if debug:
+            click.echo("No config file found at %s" % config_path)
+        return config
 
 # pull version from version-manifest file left by package install
 def check_version():
@@ -103,19 +130,61 @@ def verify():
 
 ###################################################
 # generate command
-@cli.group()
+@cli.group(help='A tool for generating skeleton Ansible code layouts.  More info: https://github.com/omniti-labs/ansible-dk/blob/master/GENERATE.md')
 def generate():
     pass
 
-@generate.command(name='playbook')
-@click.option('--name', required=True, help='Name of playbook to generate')
-def generate_playbook(name):
-    print("Generating playbook: ", name)
+def parse_extra_vars(context, param, e):
+    extra_vars = {}
+    for var in e:
+        try:
+            key, value = var.split('=')
+        except ValueError:
+            raise click.BadParameter('must be in the format var=value')
+        extra_vars[key] = value
+    return extra_vars
 
-@generate.command(name='role')
-@click.option('--name', required=True, help='Name of role to generate')
-def generate_role(name):
-    print("Generating role: ", name)
+# dynamically create generate subcommands
+def generate_method(thing):
+    @generate.command(name=thing, help='Generate ansible %s' % thing)
+    @click.option('--debug', is_flag=True, help="Enable debug mode")
+    @click.option('--generator', '-g', default=False, metavar='/opt/ansible-dk/generators/default', help='Path to custom generator repo')
+    @click.option('-e', 'extra_vars', multiple=True, callback=parse_extra_vars, metavar='var=value', help='extra vars to pass to ansible, multiple ok')
+    @click.argument('name')
+    def generated_method(debug, generator, name, extra_vars):
+        if not generator:
+            generator = get_config(debug)['generator']
+        extra_vars[thing+'_name'] = name
+        playbook_path = "%s/%s.yml" % (generator, thing)
+        if debug:
+            click.echo('generating %s named %s using %s' % (thing, name, playbook_path))
+        run_ansible(playbook_path, extra_vars)
+    generated_method.__name__ = 'generate_%s' % thing
+
+generate_things = ['repo', 'role', 'filter', 'inventory', 'config', 'playbook']
+for thing in generate_things:
+    generate_method(thing)
+
+def run_ansible(playbook, vars=None):
+    if not os.path.exists(playbook):
+        print 'Error - specified role generator playbook does not exist'
+        sys.exit()
+    Options = namedtuple('Options', ['connection', 'module_path', 'forks', 'become', 'become_method', 'become_user', 'check', 'listhosts', 'listtasks', 'listtags', 'syntax', 'remote_user', 'private_key_file', 'ssh_common_args', 'sftp_extra_args', 'scp_extra_args', 'ssh_extra_args', 'verbosity'])
+    options = Options(connection='local', module_path=None, forks=100, become=None, become_method=None, become_user=None, check=False, listhosts=False, listtasks=False, listtags=False, syntax=False, remote_user=None, private_key_file=None, ssh_common_args=None, sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None, verbosity=None)
+    loader = DataLoader()
+    variable_manager = VariableManager()
+    inventory = Inventory(loader=loader, variable_manager=variable_manager, host_list='localhost')
+    variable_manager.set_inventory(inventory)
+    if vars:
+        variable_manager.extra_vars = vars
+    playbook_executor.PlaybookExecutor(
+        playbooks=[playbook],
+        inventory=inventory,
+        options=options,
+        loader=loader,
+        variable_manager=variable_manager,
+        passwords=dict()
+    ).run()
 
 ###################################################
 # Call main CLI

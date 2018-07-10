@@ -1,0 +1,23 @@
+---
+- hosts: localhost
+  connection: local
+  vars:
+    role_subdirectories:
+      - tasks
+      - handlers
+      - templates
+      - files
+      - vars
+      - meta
+  tasks:
+
+  - name: create top level role directory
+    file: state=directory path="{{ role_name }}" recurse=yes
+
+  - name: create subdirectories
+    file: state=directory path="{{ role_name }}/{{ item }}"
+    with_items: "{{ role_subdirectories }}"
+
+  - name: create main.yml files
+    copy: content="---\n" dest="{{ role_name }}/{{ item }}/main.yml"
+    with_items: "{{ role_subdirectories }}"
